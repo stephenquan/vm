@@ -1,0 +1,202 @@
+#!/bin/bash
+
+VM_USER=
+VM_IP=
+VM_TYPE=hyperv
+VM_CONFIG=~/.vm
+TMP_DIR=/tmp/vm
+
+#----------------------------------------------------------------------
+
+flag_select_vm=0
+
+#----------------------------------------------------------------------
+
+read_config()
+{
+  if [ -f $VM_CONFIG ]; then
+    . $VM_CONFIG
+  fi
+}
+
+#----------------------------------------------------------------------
+
+mkdir_for_file()
+{
+  file="$1"
+  path="$( dirname $file )"
+  if [ ! -d "${path?}" ]; then
+    mkdir "${path?}"
+  fi
+}
+
+#----------------------------------------------------------------------
+
+change_setting_in_file()
+{
+  file="$1"
+  key="$2"
+  value="$3"
+  sed -i '/^'"${key?}"'=/d' "${file?}"
+  cat >> "${file?}" <<EOF
+${key?}=${value?}
+EOF
+}
+
+#----------------------------------------------------------------------
+
+select_from_list()
+{
+  list=$1
+  prompt=$2
+  total=$( wc -l ${list?} | awk ' { print $1 } ' )
+  val=""
+  while ! [[ "${val?}" =~ ^[0-9]+$ ]] || (( val < 1 || val > total ))
+  do
+    cat ${list} | nl
+    read -p "${prompt?}" val
+  done
+}
+
+#----------------------------------------------------------------------
+
+hyperv_get_vm_ip()
+{
+  if [ "$VM_MAC" == "" ];
+  then
+    return
+  fi
+  VM_IP=$( arp -a | grep "$VM_MAC" | head -1 | awk '{print $1}' | grep '[0-9][0-9]*\.' | head -1 )
+}
+
+#----------------------------------------------------------------------
+
+hyperv_select_vm()
+{
+  VM_IP=""
+  VM_MAC=""
+  TMP_LIST=${TMP_DIR?}/arp.txt
+  mkdir_for_file ${TMP_LIST?}
+  while [ "$VM_IP" == "" ]
+  do
+    arp -a | grep -e ' ..-..-..-..-..-.. ' | grep -v 'ff-ff-ff-ff-ff-ff' > ${TMP_LIST?}
+    select_from_list ${TMP_LIST?} "Select HyperV machine: "
+    VM_IP=$( head -${val?} ${TMP_LIST?} | tail -1 | awk '{print $1}' | grep '[0-9][0-9]*\.' | head -1 )
+    VM_MAC=$( head -${val?} ${TMP_LIST?} | tail -1 | awk '{print $2}' | grep '..-..-..-..-..' | head -1 )
+  done
+  echo "${val?} ${VM_IP?} ${VM_MAC?} selected."
+
+  change_setting_in_file "${VM_CONFIG?}" "VM_MAC" "${VM_MAC?}"
+}
+
+#----------------------------------------------------------------------
+
+vm_ssh()
+{
+  ssh_args=()
+  while [ "$1" != "" ]
+  do
+    ssh_arg="$1"
+    shift
+    case "${arg?}" in
+    -*)
+      ssh_args+=( "${ssh_arg?}" )
+      ssh_args+=( "$1" )
+      shift
+      ;;
+    *)
+      VM_USER="$1"
+      change_setting_in_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
+      ;;
+    esac
+  done
+
+  if [ "${VM_USER?}" == "" ]; then
+    while [ "${VM_USER?}" == "" ]
+    do
+      read -p "Enter username: " VM_USER
+    done
+    change_setting_in_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
+  fi
+
+  echo running: ssh "${ssh_args[@]}" ${VM_USER?}@${VM_IP?}
+  ssh "${ssh_args[@]}" ${VM_USER?}@${VM_IP?}
+}
+
+#----------------------------------------------------------------------
+
+main()
+{
+  read_config
+
+  main_cmd=
+  main_args=()
+  while [ "$1" != "" ]
+  do
+    main_arg="$1"
+    shift
+    case "${main_arg?}" in
+    -*)
+      main_opt="${main_arg?}"
+      case "${main_opt?}" in
+      -select)
+        flag_select_vm=1
+        ;;
+      esac
+      ;;
+    *)
+      main_cmd="${main_arg?}"
+      while [ "$1" != "" ]
+      do
+        main_args+=( "$1" )
+        shift
+      done
+      break
+      ;;
+    esac
+  done
+
+
+  if (( flag_select_vm )); then
+    hyperv_select_vm
+  fi
+
+  if [ "${VM_IP?}" == "" ]; then
+    hyperv_get_vm_ip
+    if [ "${VM_IP?}" == "" ]; then
+      hyperv_select_vm
+    fi
+  fi
+
+  if [ "${main_cmd?}" == "" ]; then
+    echo "VM_IP is: ${VM_IP?}"
+    exit 0
+  fi
+
+  case "${main_cmd?}" in
+
+  ssh)
+    vm_ssh "${main_args[@]}"
+    ;;
+
+  *)
+    echo "Unsuported command: ${main_cmd?}"
+    exit 1
+    ;;
+  
+  esac
+}
+
+#----------------------------------------------------------------------
+
+args=()
+while [ "$1" != "" ]
+do
+  args+=( "$1" )
+  shift
+done
+
+#----------------------------------------------------------------------
+
+main "${args[@]}"
+
