@@ -8,10 +8,6 @@ TMP_DIR=/tmp/vm
 
 #----------------------------------------------------------------------
 
-flag_select_vm=0
-
-#----------------------------------------------------------------------
-
 read_config()
 {
   if [ -f $VM_CONFIG ]; then
@@ -32,7 +28,7 @@ mkdir_for_file()
 
 #----------------------------------------------------------------------
 
-change_setting_in_file()
+write_setting_to_file()
 {
   file="$1"
   key="$2"
@@ -86,7 +82,7 @@ hyperv_select_vm()
   done
   echo "${val?} ${VM_IP?} ${VM_MAC?} selected."
 
-  change_setting_in_file "${VM_CONFIG?}" "VM_MAC" "${VM_MAC?}"
+  write_setting_to_file "${VM_CONFIG?}" "VM_MAC" "${VM_MAC?}"
 }
 
 #----------------------------------------------------------------------
@@ -106,7 +102,7 @@ vm_ssh()
       ;;
     *)
       VM_USER="$1"
-      change_setting_in_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
+      write_setting_to_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
       ;;
     esac
   done
@@ -116,7 +112,7 @@ vm_ssh()
     do
       read -p "Enter username: " VM_USER
     done
-    change_setting_in_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
+    write_setting_to_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
   fi
 
   echo running: ssh "${ssh_args[@]}" ${VM_USER?}@${VM_IP?}
@@ -140,7 +136,16 @@ main()
       main_opt="${main_arg?}"
       case "${main_opt?}" in
       -select)
-        flag_select_vm=1
+	if [ "$VM_MAC" != "" ]; then
+          VM_MAC=""
+          write_setting_to_file "${VM_CONFIG?}" "VM_MAC" "${VM_MAC?}"
+	fi
+        ;;
+      -login)
+	if [ "$VM_USER" != "" ]; then
+          VM_USER=""
+          write_setting_to_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
+	fi
         ;;
       esac
       ;;
@@ -155,11 +160,6 @@ main()
       ;;
     esac
   done
-
-
-  if (( flag_select_vm )); then
-    hyperv_select_vm
-  fi
 
   if [ "${VM_IP?}" == "" ]; then
     hyperv_get_vm_ip
