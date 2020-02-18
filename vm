@@ -89,20 +89,33 @@ hyperv_select_vm()
 
 vm_ssh()
 {
+  ssh_cmd="$1"
+  shift
+
   ssh_args=()
+  ssh_params=()
   while [ "$1" != "" ]
   do
     ssh_arg="$1"
     shift
-    case "${arg?}" in
+    case "${ssh_arg?}" in
     -*)
       ssh_args+=( "${ssh_arg?}" )
       ssh_args+=( "$1" )
       shift
       ;;
-    *)
-      VM_USER="$1"
+    *@)
+      VM_USER="${ssh_arg%@}"
       write_setting_to_file "${VM_CONFIG?}" "VM_USER" "${VM_USER?}"
+      ;;
+    *)
+      ssh_params+=( "${ssh_arg?}" )
+      while [ "$1" != "" ]
+      do
+        ssh_params+=( "$1" )
+        shift
+      done
+      break
       ;;
     esac
   done
@@ -116,7 +129,7 @@ vm_ssh()
   fi
 
   echo running: ssh "${ssh_args[@]}" ${VM_USER?}@${VM_IP?}
-  ssh "${ssh_args[@]}" ${VM_USER?}@${VM_IP?}
+  "${ssh_cmd?}" "${ssh_args[@]}" ${VM_USER?}@${VM_IP?} "${ssh_params[@]}"
 }
 
 #----------------------------------------------------------------------
@@ -176,7 +189,11 @@ main()
   case "${main_cmd?}" in
 
   ssh)
-    vm_ssh "${main_args[@]}"
+    vm_ssh "ssh" "${main_args[@]}"
+    ;;
+
+  sftp)
+    vm_ssh "sftp" "${main_args[@]}"
     ;;
 
   *)
